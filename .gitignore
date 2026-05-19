@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Runtime data (do not commit)
+data.db
+data.db-*
+backups/
+.env.local
+.env
+

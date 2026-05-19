@@ -12,6 +12,9 @@ import { InvoiceCustomizationModal } from './components/InvoiceCustomizationModa
 import { polishText, parseInvoiceItems } from './ai-service';
 import { InvoiceData, InvoiceItem, Customer, SavedInvoice, InvoiceStatus, DEFAULT_MILEAGE_RATE } from './types';
 import { SERVICE_OPTIONS, DEFAULT_TERMS } from './constants';
+import { Dashboard } from './components/Dashboard';
+import { api } from './api-client';
+import { LayoutDashboard } from 'lucide-react';
 
 // Declare globals loaded via CDN
 declare var html2pdf: any;
@@ -103,6 +106,7 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [view, setView] = useState<'invoice' | 'dashboard'>('invoice');
   const [isMagicModalOpen, setIsMagicModalOpen] = useState(false);
   const [isCustomerManagerOpen, setIsCustomerManagerOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -125,6 +129,27 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('invoiceHistory', JSON.stringify(invoiceHistory));
   }, [invoiceHistory]);
+
+  // --- Backend sync: on mount, push local state up and pull anything newer.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ping = await api.ping();
+      if (!ping.ok || cancelled) return;
+      try {
+        await api.syncAll({ invoices: invoiceHistory, customers: savedCustomers });
+        const [remoteInvoices, remoteCustomers] = await Promise.all([api.fetchInvoices(), api.fetchCustomers()]);
+        if (cancelled) return;
+        // Merge: prefer remote (it now has everything that was local + anything new from other devices).
+        if (Array.isArray(remoteInvoices)) setInvoiceHistory(remoteInvoices as SavedInvoice[]);
+        if (Array.isArray(remoteCustomers)) setSavedCustomers(remoteCustomers as Customer[]);
+      } catch (err) {
+        console.warn('Initial sync failed (offline mode):', err);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const subtotal = data.items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
   const totalMiles = data.items.reduce((sum, item) => sum + item.miles, 0);
@@ -268,16 +293,19 @@ const App: React.FC = () => {
 
   const handleSaveCustomer = () => {
     if (!data.billToName) return alert("Enter Agency Name first.");
-    const newCustomer: Customer = { id: crypto.randomUUID(), name: data.billToName, address: data.billToAddress, phone: data.billToPhone, email: data.billToEmail };
-    const existingIndex = savedCustomers.findIndex(c => c.name.toLowerCase() === newCustomer.name.toLowerCase());
+    const existingIndex = savedCustomers.findIndex(c => c.name.toLowerCase() === data.billToName.trim().toLowerCase());
     if (existingIndex >= 0) {
-      if (confirm(`Update client "${newCustomer.name}"?`)) {
+      if (confirm(`Update client "${data.billToName}"?`)) {
         const updated = [...savedCustomers];
-        updated[existingIndex] = newCustomer;
+        const merged: Customer = { ...updated[existingIndex], name: data.billToName, address: data.billToAddress, phone: data.billToPhone, email: data.billToEmail };
+        updated[existingIndex] = merged;
         setSavedCustomers(updated);
+        api.saveCustomer(merged).catch(() => {});
       }
     } else {
+      const newCustomer: Customer = { id: crypto.randomUUID(), name: data.billToName, address: data.billToAddress, phone: data.billToPhone, email: data.billToEmail };
       setSavedCustomers(prev => [...prev, newCustomer]);
+      api.saveCustomer(newCustomer).catch(() => {});
     }
   };
 
@@ -289,19 +317,21 @@ const App: React.FC = () => {
   };
 
   const handleSaveToHistory = () => {
-    const newRecord: SavedInvoice = { ...data, id: crypto.randomUUID(), savedAt: new Date().toISOString(), status: 'pending', totalAmount: grandTotal };
     const existingIndex = invoiceHistory.findIndex(i => i.invoiceNumber === data.invoiceNumber);
     if (existingIndex >= 0) {
       if (confirm(`Invoice #${data.invoiceNumber} already exists. Overwrite?`)) {
         const updated = [...invoiceHistory];
-        newRecord.status = updated[existingIndex].status; 
+        const newRecord: SavedInvoice = { ...data, id: updated[existingIndex].id, savedAt: new Date().toISOString(), status: updated[existingIndex].status, totalAmount: grandTotal };
         updated[existingIndex] = newRecord;
         setInvoiceHistory(updated);
+        api.saveInvoice(newRecord).catch(() => {});
       }
     } else {
+      const newRecord: SavedInvoice = { ...data, id: crypto.randomUUID(), savedAt: new Date().toISOString(), status: 'pending', totalAmount: grandTotal };
       setInvoiceHistory(prev => [newRecord, ...prev]);
+      api.saveInvoice(newRecord).catch(() => {});
       if (confirm("Invoice saved to history. Would you like to start a new invoice?")) {
-        handleNewInvoice(true); // Passing true to skip confirm inside handleNewInvoice if we already confirmed here
+        handleNewInvoice(true);
       }
     }
   };
@@ -320,11 +350,15 @@ const App: React.FC = () => {
     html2pdf().set(opt).from(element).save();
   };
 
+  if (view === 'dashboard') {
+    return <Dashboard onBack={() => setView('invoice')} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 print:bg-white pb-24 md:pb-0">
       <MagicAddModal isOpen={isMagicModalOpen} onClose={() => setIsMagicModalOpen(false)} onAddItems={handleMagicAddItems} defaultDate={data.date} />
       <CustomerManagerModal isOpen={isCustomerManagerOpen} onClose={() => setIsCustomerManagerOpen(false)} customers={savedCustomers} onUpdateCustomer={(c) => setSavedCustomers(prev => prev.map(old => old.id === c.id ? c : old))} onDeleteCustomer={(id) => setSavedCustomers(prev => prev.filter(c => c.id !== id))} />
-      <InvoiceHistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} history={invoiceHistory} onLoad={(inv) => { const { id, savedAt, status, totalAmount, ...loaded } = inv; setData(loaded); setIsHistoryModalOpen(false); }} onToggleStatus={(id, s) => setInvoiceHistory(p => p.map(i => i.id === id ? {...i, status: s} : i))} onDelete={(id) => confirm("Delete?") && setInvoiceHistory(p => p.filter(i => i.id !== id))} />
+      <InvoiceHistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} history={invoiceHistory} onLoad={(inv) => { const { id, savedAt, status, totalAmount, ...loaded } = inv; setData(loaded); setIsHistoryModalOpen(false); }} onToggleStatus={(id, s) => { setInvoiceHistory(p => p.map(i => i.id === id ? {...i, status: s} : i)); api.setStatus(id, s).catch(() => {}); }} onDelete={(id) => { if (confirm("Delete?")) { setInvoiceHistory(p => p.filter(i => i.id !== id)); api.deleteInvoice(id).catch(() => {}); } }} />
       <InvoiceCustomizationModal isOpen={isCustomizationModalOpen} onClose={() => setIsCustomizationModalOpen(false)} data={data} onUpdate={updateField} />
 
       {isDownloadOptionsOpen && (
@@ -355,7 +389,10 @@ const App: React.FC = () => {
            <button onClick={handleSaveToHistory} className="flex items-center gap-2 text-slate-700 font-bold bg-white hover:bg-slate-50 px-4 py-2 rounded-lg shadow-sm border border-slate-200"><Save size={18} />Save</button>
            <button onClick={() => setIsCustomizationModalOpen(true)} className="flex items-center gap-2 text-slate-700 font-bold bg-white hover:bg-slate-50 px-4 py-2 rounded-lg shadow-sm border border-slate-200"><Settings size={18} />Customize</button>
         </div>
-        <button onClick={() => setIsHistoryModalOpen(true)} className="flex items-center gap-2 text-slate-600 font-bold bg-white px-4 py-2 rounded-lg shadow-sm border border-slate-200"><History size={18} />View History</button>
+        <div className="flex gap-2">
+          <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-white font-bold bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded-lg shadow-sm"><LayoutDashboard size={18} />Dashboard</button>
+          <button onClick={() => setIsHistoryModalOpen(true)} className="flex items-center gap-2 text-slate-600 font-bold bg-white px-4 py-2 rounded-lg shadow-sm border border-slate-200"><History size={18} />View History</button>
+        </div>
       </div>
 
       <main className="container mx-auto max-w-4xl p-4 md:py-8 lg:px-0 no-print:pb-32 print:p-0">
