@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arpi Moradi, RN - Invoice Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEy+WSj83jCg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+      
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f1f5f9;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* PDF/Print Layout Perfection */
+      @media print {
+        @page {
+          margin: 0;
+          size: letter;
+        }
+        body {
+          background-color: white;
+          margin: 0;
+          padding: 0;
+        }
+        .no-print {
+          display: none !important;
+        }
+        #invoice-container {
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          padding: 30px !important; /* Fixed padding for PDF look */
+          box-shadow: none !important;
+          border-radius: 0 !important;
+        }
+        .print-break-inside-avoid {
+          break-inside: avoid;
+        }
+        input, textarea, select {
+          border: none !important;
+          background: transparent !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          outline: none !important;
+          resize: none;
+          appearance: none;
+          color: black !important;
+        }
+        /* Fix for select elements in PDF */
+        select {
+          background-image: none !important;
+        }
+        ::placeholder {
+          color: transparent !important;
+        }
+      }
+
+      /* Specific fixes for UI components when converting to PDF */
+      .pdf-mode select {
+        appearance: none;
+        -moz-appearance: none;
+        -webkit-appearance: none;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
